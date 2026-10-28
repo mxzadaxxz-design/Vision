@@ -46,7 +46,8 @@ local Config = {
 
     VehicleHeight = 10,
     VehicleDistance = 6,
-    ThrowSpeed = 180,
+    ThrowSpeed = 3500,
+    ThrowLift = 1800,
     GrabRange = 45,
 }
 
@@ -375,6 +376,21 @@ local function findVehicle(part)
     end
 end
 
+-- Direção horizontal: acompanha a câmera sem inclinar o carro.
+local function vehicleForward(root)
+    local camera = workspace.CurrentCamera
+    local look = camera and camera.CFrame.LookVector or root.CFrame.LookVector
+    local forward = Vector3.new(look.X, 0, look.Z)
+    if forward.Magnitude < 0.001 then
+        look = root.CFrame.LookVector
+        forward = Vector3.new(look.X, 0, look.Z)
+    end
+    if forward.Magnitude < 0.001 then
+        return Vector3.new(0, 0, -1)
+    end
+    return forward.Unit
+end
+
 local function grabVehicle()
     if HeldVehicle then
         releaseVehicle()
@@ -423,6 +439,8 @@ local function grabVehicle()
 
     local attachment = make("Attachment", {
         Name = "VisionVehicleAttachment",
+        -- Referência do assento, não dos eixos da raiz do veículo.
+        CFrame = part.CFrame:ToObjectSpace(seat.CFrame),
     }, part)
 
     local position = make("AlignPosition", {
@@ -430,26 +448,27 @@ local function grabVehicle()
         Attachment0 = attachment,
         ApplyAtCenterOfMass = true,
         MaxForce = 1e9,
-        MaxVelocity = 100,
-        Responsiveness = 35,
+        MaxVelocity = 250,
+        Responsiveness = 65,
         Position = root.Position
             + Vector3.new(0, Config.VehicleHeight, 0)
-            + root.CFrame.LookVector * Config.VehicleDistance,
+            + vehicleForward(root) * Config.VehicleDistance,
     }, part)
 
     local orientation = make("AlignOrientation", {
         Mode = Enum.OrientationAlignmentMode.OneAttachment,
         Attachment0 = attachment,
         MaxTorque = 1e9,
-        MaxAngularVelocity = 30,
-        Responsiveness = 25,
-        CFrame = part.CFrame.Rotation,
+        MaxAngularVelocity = 60,
+        Responsiveness = 65,
+        CFrame = CFrame.lookAt(Vector3.zero, vehicleForward(root)),
     }, part)
 
     HeldVehicle = {
         Part = part,
         Model = model,
         Position = position,
+        Orientation = orientation,
         Constraints = {position, orientation, attachment},
     }
 
@@ -464,15 +483,25 @@ local function throwVehicle()
 
     local part = HeldVehicle.Part
     local camera = workspace.CurrentCamera
+    if not camera or not part:IsDescendantOf(workspace) then
+        releaseVehicle()
+        vehicleMessage("Veículo ou câmera indisponível.")
+        return
+    end
 
+    local direction = camera.CFrame.LookVector
     releaseVehicle()
 
-    if part.Parent and camera then
-        part.AssemblyLinearVelocity =
-            camera.CFrame.LookVector * Config.ThrowSpeed
-            + Vector3.new(0, Config.ThrowSpeed * 0.15, 0)
+    local success, problem = pcall(function()
+        part.AssemblyAngularVelocity = Vector3.zero
+        part.AssemblyLinearVelocity = direction * Config.ThrowSpeed
+            + Vector3.new(0, Config.ThrowLift, 0)
+    end)
 
-        vehicleMessage("Impulso aplicado. O servidor pode corrigir.")
+    if success then
+        vehicleMessage("Arremessado! Velocidade: " .. Config.ThrowSpeed)
+    else
+        vehicleMessage("Falha no arremesso: " .. tostring(problem))
     end
 end
 
@@ -876,6 +905,7 @@ action(VehiclePage, "ARREMESSAR VEÍCULO  [H]", throwVehicle)
 numberField(VehiclePage, "Altura acima do jogador", "VehicleHeight", 0)
 numberField(VehiclePage, "Distância à frente", "VehicleDistance", 0)
 numberField(VehiclePage, "Força do arremesso", "ThrowSpeed", 0)
+numberField(VehiclePage, "Impulso para cima", "ThrowLift", 0)
 numberField(VehiclePage, "Distância para pegar", "GrabRange", 0)
 
 note(VehiclePage,
@@ -1179,4 +1209,108 @@ connect(RunService.Heartbeat, function()
         if not FlightVelocity
             or FlightVelocity.Parent ~= root
             or not FlightAttachment
-            or FlightAttachment.Parent ~= root t
+            or FlightAttachment.Parent ~= root then
+            startFlight(root, humanoid)
+        end
+
+        local direction = Vector3.zero
+
+        if not UIS:GetFocusedTextBox() then
+            if UIS:IsKeyDown(Enum.KeyCode.W) then
+                direction += camera.CFrame.LookVector
+            end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then
+                direction -= camera.CFrame.LookVector
+            end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then
+                direction += camera.CFrame.RightVector
+            end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then
+                direction -= camera.CFrame.RightVector
+            end
+            if UIS:IsKeyDown(Enum.KeyCode.Space) then
+                direction += Vector3.yAxis
+            end
+            if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then
+                direction -= Vector3.yAxis
+            end
+        end
+
+        FlightVelocity.VectorVelocity = direction.Magnitude > 0
+            and direction.Unit * Config.FlySpeed
+            or Vector3.zero
+
+        root.AssemblyAngularVelocity = Vector3.zero
+    else
+        stopFlight()
+    end
+
+    if HeldVehicle then
+        if not alive
+            or not HeldVehicle.Part:IsDescendantOf(workspace)
+            or not HeldVehicle.Model:IsDescendantOf(workspace)
+            or not HeldVehicle.Position.Parent
+            or not HeldVehicle.Orientation.Parent then
+
+            releaseVehicle()
+            vehicleMessage("Veículo liberado.")
+        else
+            local forward = vehicleForward(root)
+            HeldVehicle.Position.Position =
+                root.Position
+                + Vector3.new(0, Config.VehicleHeight, 0)
+                + forward * Config.VehicleDistance
+            HeldVehicle.Orientation.CFrame =
+                CFrame.lookAt(Vector3.zero, forward)
+        end
+    end
+end)
+
+-- =========================================================
+-- ENCERRAMENTO
+-- =========================================================
+
+function Controller.Stop()
+    if Stopped then return end
+    Stopped = true
+
+    LockedPart = nil
+    stopFlight()
+    releaseVehicle()
+
+    RunService:UnbindFromRenderStep(Binding)
+    RunService:UnbindFromRenderStep(Binding .. "Recoil")
+
+    for _, connection in ipairs(Connections) do
+        connection:Disconnect()
+    end
+
+    for _, visual in pairs(Visuals) do
+        removeVisual(visual)
+    end
+
+    if SpeedApplied and SpeedHumanoid
+        and SpeedHumanoid.Parent and SavedSpeed then
+        SpeedHumanoid.WalkSpeed = SavedSpeed
+    end
+
+    table.clear(Visuals)
+    table.clear(Targets)
+    Gui:Destroy()
+
+    if Env.VisionController == Controller then
+        Env.VisionController = nil
+    end
+end
+
+action(
+    MovementPage,
+    "ENCERRAR SCRIPT",
+    Controller.Stop,
+    Color3.fromRGB(104, 43, 65)
+)
+
+selectPage("VISUAL")
+
+print("[VISION] Carregado.")
+print("Shift direito: menu | F: voo | G: veículo | H: arremessar")

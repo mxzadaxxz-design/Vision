@@ -1,5 +1,5 @@
--- VISION | SCRIPT COMPLETO
--- ESP, esqueleto, nomes, mira, velocidade, voo e veículos.
+-- VISION | SCRIPT COMPLETO | INTERFACE MONOCROMÁTICA
+-- ESP, contornos corporais, nomes, mira, velocidade, voo e veículos.
 -- ESP requer Drawing no executor.
 -- Não altera dinheiro nem concede ferramentas pelo servidor.
 
@@ -30,7 +30,7 @@ local Config = {
     Names = true,
     NPCs = false,
     TeamCheck = false,
-    Color = Color3.fromRGB(110, 150, 255),
+    Color = Color3.fromRGB(235, 235, 235),
 
     Aim = false,
     AimPart = "Head",
@@ -43,6 +43,7 @@ local Config = {
     Speed = 32,
     Fly = false,
     FlySpeed = 60,
+    Noclip = false,
 
     VehicleHeight = 10,
     VehicleDistance = 6,
@@ -108,31 +109,14 @@ end
 -- ESP / ALVOS
 -- =========================================================
 
-local Bones = {
-    {"Head", "UpperTorso"},
-    {"UpperTorso", "LowerTorso"},
-
-    {"UpperTorso", "LeftUpperArm"},
-    {"LeftUpperArm", "LeftLowerArm"},
-    {"LeftLowerArm", "LeftHand"},
-
-    {"UpperTorso", "RightUpperArm"},
-    {"RightUpperArm", "RightLowerArm"},
-    {"RightLowerArm", "RightHand"},
-
-    {"LowerTorso", "LeftUpperLeg"},
-    {"LeftUpperLeg", "LeftLowerLeg"},
-    {"LeftLowerLeg", "LeftFoot"},
-
-    {"LowerTorso", "RightUpperLeg"},
-    {"RightUpperLeg", "RightLowerLeg"},
-    {"RightLowerLeg", "RightFoot"},
-
-    {"Head", "Torso"},
-    {"Torso", "Left Arm"},
-    {"Torso", "Right Arm"},
-    {"Torso", "Left Leg"},
-    {"Torso", "Right Leg"},
+-- Partes corporais R6 e R15; exclui acessórios e HumanoidRootPart.
+local BodyParts = {
+    "Head", "Torso", "UpperTorso", "LowerTorso",
+    "Left Arm", "Right Arm", "Left Leg", "Right Leg",
+    "LeftUpperArm", "LeftLowerArm", "LeftHand",
+    "RightUpperArm", "RightLowerArm", "RightHand",
+    "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
+    "RightUpperLeg", "RightLowerLeg", "RightFoot",
 }
 
 local function draw(kind, properties)
@@ -158,16 +142,8 @@ local function createVisual()
             Size = 14,
             Color = Config.Color,
         }),
-        Lines = {},
+        PartOutlines = {},
     }
-
-    for index = 1, #Bones do
-        visual.Lines[index] = draw("Line", {
-            Visible = false,
-            Thickness = 1.5,
-            Color = Config.Color,
-        })
-    end
 
     return visual
 end
@@ -175,16 +151,16 @@ end
 local function hideVisual(visual)
     visual.Box.Visible = false
     visual.Name.Visible = false
-    for _, line in ipairs(visual.Lines) do
-        line.Visible = false
+    for _, outline in pairs(visual.PartOutlines) do
+        outline.Enabled = false
     end
 end
 
 local function removeVisual(visual)
     visual.Box:Remove()
     visual.Name:Remove()
-    for _, line in ipairs(visual.Lines) do
-        line:Remove()
+    for _, outline in pairs(visual.PartOutlines) do
+        outline:Destroy()
     end
 end
 
@@ -239,7 +215,12 @@ local function validTarget(model, humanoid)
 end
 
 local function screenBox(camera, model)
-    local frame, size = model:GetBoundingBox()
+    local frame, size
+    if model:IsA("BasePart") then
+        frame, size = model.CFrame, model.Size
+    else
+        frame, size = model:GetBoundingBox()
+    end
     local half = size * 0.5
     local minimum = Vector2.new(math.huge, math.huge)
     local maximum = Vector2.new(-math.huge, -math.huge)
@@ -506,17 +487,99 @@ local function throwVehicle()
 end
 
 -- =========================================================
+-- ATRAVESSAR PAREDES
+-- =========================================================
+
+local OriginalCollisions = {}
+
+local function restoreCollisions()
+    for part, original in pairs(OriginalCollisions) do
+        if part.Parent then
+            part.CanCollide = original
+        end
+    end
+    table.clear(OriginalCollisions)
+end
+
+connect(RunService.PreSimulation, function()
+    local character, humanoid = characterParts()
+    if Stopped or not Config.Noclip or not character
+        or not humanoid or humanoid.Health <= 0 then
+        restoreCollisions()
+        return
+    end
+
+    -- Restaura peças removidas ou de um personagem anterior.
+    for part, original in pairs(OriginalCollisions) do
+        if not part:IsDescendantOf(character) then
+            if part.Parent then
+                part.CanCollide = original
+            end
+            OriginalCollisions[part] = nil
+        end
+    end
+
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if OriginalCollisions[part] == nil then
+                OriginalCollisions[part] = part.CanCollide
+            end
+            part.CanCollide = false
+        end
+    end
+end)
+
+connect(Player.CharacterRemoving, function()
+    restoreCollisions()
+end)
+
+-- =========================================================
 -- INTERFACE
 -- =========================================================
 
 local Colors = {
-    Background = Color3.fromRGB(14, 16, 25),
-    Surface = Color3.fromRGB(24, 27, 40),
-    Field = Color3.fromRGB(35, 39, 57),
-    Accent = Color3.fromRGB(118, 108, 255),
-    Text = Color3.fromRGB(240, 242, 255),
-    Muted = Color3.fromRGB(147, 155, 182),
+    Background = Color3.fromRGB(10, 10, 10),
+    Surface = Color3.fromRGB(21, 21, 21),
+    Field = Color3.fromRGB(32, 32, 32),
+    Accent = Color3.fromRGB(210, 210, 210),
+    Text = Color3.fromRGB(245, 245, 245),
+    Muted = Color3.fromRGB(146, 146, 146),
+    Stroke = Color3.fromRGB(55, 55, 55),
 }
+
+-- Cancela a animação anterior da mesma propriedade ao atualizar um controle.
+local UITweens = setmetatable({}, {__mode = "k"})
+local function animate(object, properties, duration)
+    local previous = UITweens[object]
+    if previous then previous:Cancel() end
+    local tween = TweenService:Create(object,
+        TweenInfo.new(duration or 0.18, Enum.EasingStyle.Quart,
+            Enum.EasingDirection.Out), properties)
+    UITweens[object] = tween
+    tween:Play()
+end
+
+local function outline(object, transparency)
+    return make("UIStroke", {
+        Color = Colors.Stroke,
+        Thickness = 1,
+        Transparency = transparency or 0.3,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+    }, object)
+end
+
+local function label(parent, value, size, color)
+    return make("TextLabel", {
+        BackgroundTransparency = 1,
+        Text = value,
+        Font = Enum.Font.GothamMedium,
+        TextSize = size or 12,
+        TextColor3 = color or Colors.Text,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        BorderSizePixel = 0,
+    }, parent)
+end
 
 local Gui = make("ScreenGui", {
     Name = "VisionComplete",
@@ -528,138 +591,220 @@ local Gui = make("ScreenGui", {
 local Window = make("Frame", {
     AnchorPoint = Vector2.new(0.5, 0.5),
     Position = UDim2.fromScale(0.5, 0.5),
-    Size = UDim2.fromOffset(500, 550),
+    Size = UDim2.fromOffset(760, 550),
     BackgroundColor3 = Colors.Background,
+    BackgroundTransparency = 0.12,
     BorderSizePixel = 0,
     ClipsDescendants = true,
 }, Gui)
-round(Window, 18)
-
-make("UIStroke", {
-    Color = Color3.fromRGB(66, 67, 101),
-    Thickness = 1,
-}, Window)
-
+round(Window, 16)
+outline(Window, 0.05)
 local Scale = make("UIScale", {Scale = 1}, Window)
 
-local function label(parent, value, size, color)
-    return make("TextLabel", {
-        BackgroundTransparency = 1,
-        Text = value,
-        Font = Enum.Font.GothamMedium,
-        TextSize = size or 12,
-        TextColor3 = color or Colors.Text,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    }, parent)
-end
-
 local Header = make("Frame", {
-    Size = UDim2.new(1, 0, 0, 86),
+    Size = UDim2.new(1, 0, 0, 76),
     BackgroundColor3 = Colors.Surface,
+    BackgroundTransparency = 0.15,
     BorderSizePixel = 0,
     Active = true,
 }, Window)
 
-make("UIGradient", {
-    Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(49, 39, 85)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(24, 27, 40)),
-    }),
-    Rotation = 15,
+make("Frame", {
+    Position = UDim2.new(0, 0, 1, -1),
+    Size = UDim2.new(1, 0, 0, 1),
+    BackgroundColor3 = Colors.Stroke,
+    BackgroundTransparency = 0.35,
+    BorderSizePixel = 0,
 }, Header)
 
-local Title = label(Header, "VISION", 26)
-Title.Position = UDim2.fromOffset(24, 17)
-Title.Size = UDim2.fromOffset(280, 32)
-
-local Subtitle = label(
-    Header,
-    "VISUAL  /  MOVIMENTO  /  CONTROLE FÍSICO",
-    10,
-    Colors.Muted
-)
-Subtitle.Position = UDim2.fromOffset(25, 53)
-Subtitle.Size = UDim2.fromOffset(365, 17)
+do
+    local icon = make("Frame", {
+        Position = UDim2.fromOffset(20, 18),
+        Size = UDim2.fromOffset(40, 40),
+        BackgroundColor3 = Colors.Field,
+        BorderSizePixel = 0,
+    }, Header)
+    round(icon, 11)
+    outline(icon)
+    local letter = label(icon, "V", 23)
+    letter.Size = UDim2.fromScale(1, 1)
+    letter.Font = Enum.Font.GothamBold
+    letter.TextXAlignment = Enum.TextXAlignment.Center
+    local title = label(Header, "VISION", 21)
+    title.Position = UDim2.fromOffset(73, 16)
+    title.Size = UDim2.fromOffset(220, 27)
+    title.Font = Enum.Font.GothamBold
+    local subtitle = label(Header, "PAINEL DE CONTROLE", 9, Colors.Muted)
+    subtitle.Position = UDim2.fromOffset(74, 44)
+    subtitle.Size = UDim2.fromOffset(260, 15)
+    local badge = make("Frame", {
+        Position = UDim2.new(1, -186, 0, 26),
+        Size = UDim2.fromOffset(112, 24),
+        BackgroundColor3 = Colors.Field,
+        BackgroundTransparency = 0.25,
+        BorderSizePixel = 0,
+    }, Header)
+    round(badge, 6)
+    outline(badge, 0.5)
+    local text = label(badge, "CLIENTE LOCAL", 9, Colors.Muted)
+    text.Size = UDim2.fromScale(1, 1)
+    text.TextXAlignment = Enum.TextXAlignment.Center
+end
 
 local Hide = make("TextButton", {
-    Position = UDim2.new(1, -49, 0, 26),
-    Size = UDim2.fromOffset(32, 30),
+    Position = UDim2.new(1, -54, 0, 21),
+    Size = UDim2.fromOffset(34, 34),
     BackgroundColor3 = Colors.Field,
+    BackgroundTransparency = 0.3,
     BorderSizePixel = 0,
     Text = "—",
-    TextSize = 18,
-    Font = Enum.Font.Gotham,
-    TextColor3 = Colors.Text,
+    TextSize = 17,
+    Font = Enum.Font.GothamMedium,
+    TextColor3 = Colors.Muted,
+    AutoButtonColor = false,
 }, Header)
-round(Hide, 8)
+round(Hide, 9)
+outline(Hide, 0.6)
+connect(Hide.MouseEnter, function()
+    animate(Hide, {BackgroundTransparency = 0, TextColor3 = Colors.Text})
+end)
+connect(Hide.MouseLeave, function()
+    animate(Hide, {BackgroundTransparency = 0.3, TextColor3 = Colors.Muted})
+end)
+
+local Sidebar = make("Frame", {
+    Position = UDim2.fromOffset(0, 76),
+    Size = UDim2.new(0, 176, 1, -118),
+    BackgroundColor3 = Colors.Surface,
+    BackgroundTransparency = 0.4,
+    BorderSizePixel = 0,
+}, Window)
+make("Frame", {
+    Position = UDim2.new(1, -1, 0, 0),
+    Size = UDim2.new(0, 1, 1, 0),
+    BackgroundColor3 = Colors.Stroke,
+    BackgroundTransparency = 0.4,
+    BorderSizePixel = 0,
+}, Sidebar)
+
+do
+    local title = label(Sidebar, "NAVEGAÇÃO", 9, Colors.Muted)
+    title.Position = UDim2.fromOffset(20, 20)
+    title.Size = UDim2.fromOffset(140, 15)
+    local hint = label(Sidebar, "SHIFT DIREITO\nMostrar / ocultar painel", 10, Colors.Muted)
+    hint.Position = UDim2.new(0, 20, 1, -57)
+    hint.Size = UDim2.new(1, -34, 0, 36)
+    hint.TextWrapped = true
+    hint.TextTruncate = Enum.TextTruncate.None
+    hint.TextYAlignment = Enum.TextYAlignment.Top
+end
 
 local Tabs = make("Frame", {
-    Position = UDim2.fromOffset(16, 99),
-    Size = UDim2.new(1, -32, 0, 36),
+    Position = UDim2.fromOffset(12, 49),
+    Size = UDim2.new(1, -24, 0, 255),
     BackgroundTransparency = 1,
-}, Window)
-
+}, Sidebar)
 make("UIListLayout", {
-    FillDirection = Enum.FillDirection.Horizontal,
-    Padding = UDim.new(0, 6),
+    FillDirection = Enum.FillDirection.Vertical,
+    Padding = UDim.new(0, 7),
     SortOrder = Enum.SortOrder.LayoutOrder,
 }, Tabs)
 
-local Pages = {}
-local TabButtons = {}
+local PageTitle = label(Window, "Visual", 21)
+PageTitle.Position = UDim2.fromOffset(198, 96)
+PageTitle.Size = UDim2.new(1, -222, 0, 27)
+PageTitle.Font = Enum.Font.GothamBold
+local PageDescription = label(Window, "", 11, Colors.Muted)
+PageDescription.Position = UDim2.fromOffset(199, 128)
+PageDescription.Size = UDim2.new(1, -224, 0, 18)
+
+local PageInfo = {
+    ["VISUAL"] = {"Visual", "Indicadores e aparência dos alvos.", "01"},
+    ["MIRA"] = {"Mira", "Seleção de alvos e controle da câmera.", "02"},
+    ["MOVIMENTO"] = {"Movimento", "Velocidade, voo e colisão.", "03"},
+    ["VEÍCULOS"] = {"Veículos", "Posicionamento e arremesso de veículos.", "04"},
+    ["EXTRAS"] = {"Extras", "Ferramentas locais e ações adicionais.", "05"},
+}
+local Pages, TabButtons, TabMarkers, TabNumbers, TabCaptions = {}, {}, {}, {}, {}
+local SelectedPage
+local TabOrder = 0
 
 local function selectPage(name)
+    SelectedPage = name
+    local info = PageInfo[name]
+    PageTitle.Text = info and info[1] or name
+    PageDescription.Text = info and info[2] or ""
     for key, page in pairs(Pages) do
-        page.Visible = key == name
-        TabButtons[key].BackgroundColor3 =
-            key == name and Colors.Accent or Colors.Surface
-        TabButtons[key].TextColor3 =
-            key == name and Colors.Text or Colors.Muted
+        local active = key == name
+        page.Visible = active
+        animate(TabButtons[key], {BackgroundTransparency = active and 0 or 1})
+        animate(TabCaptions[key], {TextColor3 = active and Colors.Text or Colors.Muted})
+        animate(TabNumbers[key], {TextColor3 = active and Colors.Text or Colors.Muted})
+        TabMarkers[key].Visible = active
     end
 end
 
 local function newPage(name)
+    TabOrder += 1
+    local info = PageInfo[name]
     local page = make("ScrollingFrame", {
-        Position = UDim2.fromOffset(16, 150),
-        Size = UDim2.new(1, -32, 1, -192),
+        Position = UDim2.fromOffset(198, 165),
+        Size = UDim2.new(1, -218, 1, -218),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ScrollBarThickness = 3,
         ScrollBarImageColor3 = Colors.Accent,
+        ScrollBarImageTransparency = 0.5,
         CanvasSize = UDim2.new(),
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollingDirection = Enum.ScrollingDirection.Y,
         Visible = false,
     }, Window)
-
     make("UIListLayout", {
-        Padding = UDim.new(0, 8),
+        Padding = UDim.new(0, 9),
         SortOrder = Enum.SortOrder.LayoutOrder,
     }, page)
-
     make("UIPadding", {
-        PaddingRight = UDim.new(0, 7),
-        PaddingBottom = UDim.new(0, 8),
+        PaddingTop = UDim.new(0, 1),
+        PaddingLeft = UDim.new(0, 1),
+        PaddingRight = UDim.new(0, 9),
+        PaddingBottom = UDim.new(0, 10),
     }, page)
-
     local button = make("TextButton", {
-        Size = UDim2.new(0.25, -5, 1, 0),
-        BackgroundColor3 = Colors.Surface,
+        Size = UDim2.new(1, 0, 0, 43),
+        BackgroundColor3 = Colors.Field,
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        Text = name,
-        Font = Enum.Font.GothamSemibold,
-        TextSize = 10,
-        TextColor3 = Colors.Muted,
+        Text = "",
         AutoButtonColor = false,
+        LayoutOrder = TabOrder,
     }, Tabs)
-    round(button, 9)
-
-    Pages[name] = page
-    TabButtons[name] = button
-
-    connect(button.MouseButton1Click, function()
-        selectPage(name)
+    round(button, 8)
+    local number = label(button, info and info[3] or tostring(TabOrder), 10, Colors.Muted)
+    number.Position = UDim2.fromOffset(14, 0)
+    number.Size = UDim2.fromOffset(24, 43)
+    number.Font = Enum.Font.Code
+    local caption = label(button, name, 10, Colors.Muted)
+    caption.Position = UDim2.fromOffset(43, 0)
+    caption.Size = UDim2.new(1, -48, 1, 0)
+    caption.Font = Enum.Font.GothamSemibold
+    local marker = make("Frame", {
+        Position = UDim2.fromOffset(1, 11),
+        Size = UDim2.fromOffset(2, 21),
+        BackgroundColor3 = Colors.Text,
+        BorderSizePixel = 0,
+        Visible = false,
+    }, button)
+    round(marker, 2)
+    Pages[name], TabButtons[name] = page, button
+    TabMarkers[name], TabNumbers[name], TabCaptions[name] = marker, number, caption
+    connect(button.Activated, function() selectPage(name) end)
+    connect(button.MouseEnter, function()
+        if SelectedPage ~= name then animate(button, {BackgroundTransparency = 0.55}) end
     end)
-
+    connect(button.MouseLeave, function()
+        if SelectedPage ~= name then animate(button, {BackgroundTransparency = 1}) end
+    end)
     return page
 end
 
@@ -667,178 +812,435 @@ local VisualPage = newPage("VISUAL")
 local AimPage = newPage("MIRA")
 local MovementPage = newPage("MOVIMENTO")
 local VehiclePage = newPage("VEÍCULOS")
-
 local Order = 0
 
 local function row(parent, name)
     Order += 1
-
     local frame = make("Frame", {
-        Size = UDim2.new(1, 0, 0, 52),
+        Size = UDim2.new(1, 0, 0, 57),
         BackgroundColor3 = Colors.Surface,
+        BackgroundTransparency = 0.16,
         BorderSizePixel = 0,
         LayoutOrder = Order,
     }, parent)
-    round(frame, 10)
-
-    local caption = label(frame, name)
-    caption.Position = UDim2.fromOffset(14, 0)
-    caption.Size = UDim2.new(1, -166, 1, 0)
-
+    round(frame, 9)
+    local stroke = outline(frame, 0.65)
+    local caption = label(frame, name, 12)
+    caption.Position = UDim2.fromOffset(16, 0)
+    caption.Size = UDim2.new(1, -180, 1, 0)
+    caption.TextWrapped = true
+    caption.TextTruncate = Enum.TextTruncate.None
+    connect(frame.MouseEnter, function() animate(stroke, {Transparency = 0.15}) end)
+    connect(frame.MouseLeave, function() animate(stroke, {Transparency = 0.65}) end)
     return frame
 end
 
 local function refreshKey(key)
-    for _, update in ipairs(Refreshers[key] or {}) do
-        update()
-    end
+    for _, update in ipairs(Refreshers[key] or {}) do update() end
 end
 
 local function toggle(parent, name, key, callback)
     local frame = row(parent, name)
-
+    local status = label(frame, "", 9, Colors.Muted)
+    status.Position = UDim2.new(1, -112, 0, 0)
+    status.Size = UDim2.new(0, 35, 1, 0)
+    status.TextXAlignment = Enum.TextXAlignment.Right
     local button = make("TextButton", {
-        Size = UDim2.fromOffset(46, 26),
-        Position = UDim2.new(1, -60, 0.5, -13),
+        Size = UDim2.fromOffset(43, 24),
+        Position = UDim2.new(1, -59, 0.5, -12),
         BackgroundColor3 = Colors.Field,
         BorderSizePixel = 0,
         Text = "",
         AutoButtonColor = false,
     }, frame)
-    round(button, 13)
-
+    round(button, 12)
     local knob = make("Frame", {
-        Size = UDim2.fromOffset(18, 18),
-        BackgroundColor3 = Colors.Text,
+        Size = UDim2.fromOffset(16, 16),
+        Position = UDim2.fromOffset(4, 4),
+        BackgroundColor3 = Colors.Muted,
         BorderSizePixel = 0,
     }, button)
-    round(knob, 9)
-
+    round(knob, 8)
     local function refresh()
         local enabled = Config[key] == true
-
-        TweenService:Create(button, TweenInfo.new(0.12), {
-            BackgroundColor3 =
-                enabled and Colors.Accent or Colors.Field,
-        }):Play()
-
-        TweenService:Create(knob, TweenInfo.new(0.12), {
-            Position = UDim2.fromOffset(enabled and 24 or 4, 4),
-        }):Play()
+        status.Text = enabled and "ON" or "OFF"
+        animate(button, {BackgroundColor3 = enabled and Colors.Accent or Colors.Field})
+        animate(knob, {
+            Position = UDim2.fromOffset(enabled and 23 or 4, 4),
+            BackgroundColor3 = enabled and Colors.Background or Colors.Muted,
+        })
     end
-
     Refreshers[key] = Refreshers[key] or {}
     table.insert(Refreshers[key], refresh)
-
-    connect(button.MouseButton1Click, function()
+    connect(button.Activated, function()
         Config[key] = not Config[key]
         if callback then callback(Config[key]) end
         refreshKey(key)
     end)
-
     refresh()
 end
 
 local function numberField(parent, name, key, minimum, maximum)
     local frame = row(parent, name)
-
     local field = make("TextBox", {
-        Size = UDim2.fromOffset(118, 30),
-        Position = UDim2.new(1, -132, 0.5, -15),
-        BackgroundColor3 = Colors.Field,
+        Size = UDim2.fromOffset(118, 32),
+        Position = UDim2.new(1, -134, 0.5, -16),
+        BackgroundColor3 = Colors.Background,
+        BackgroundTransparency = 0.15,
         BorderSizePixel = 0,
         Text = tostring(Config[key]),
         ClearTextOnFocus = false,
-        Font = Enum.Font.GothamMedium,
+        Font = Enum.Font.Code,
         TextSize = 13,
         TextColor3 = Colors.Text,
     }, frame)
-    round(field, 8)
-
+    round(field, 7)
+    local stroke = outline(field, 0.45)
+    connect(field.Focused, function()
+        animate(stroke, {Color = Colors.Accent, Transparency = 0})
+    end)
     connect(field.FocusLost, function()
         local value = tonumber((field.Text:gsub(",", ".")))
-
-        if value and value == value
-            and value > -math.huge and value < math.huge then
-
-            if minimum ~= nil then
-                value = math.max(minimum, value)
-            end
-            if maximum ~= nil then
-                value = math.min(maximum, value)
-            end
-
+        if value and value == value and value > -math.huge and value < math.huge then
+            if minimum ~= nil then value = math.max(minimum, value) end
+            if maximum ~= nil then value = math.min(maximum, value) end
             Config[key] = value
         end
-
         field.Text = tostring(Config[key])
+        animate(stroke, {Color = Colors.Stroke, Transparency = 0.45})
     end)
 end
 
 local function choice(parent, name, key, options)
     local frame = row(parent, name)
-
     local button = make("TextButton", {
-        Size = UDim2.fromOffset(140, 30),
-        Position = UDim2.new(1, -154, 0.5, -15),
+        Size = UDim2.fromOffset(140, 32),
+        Position = UDim2.new(1, -156, 0.5, -16),
         BackgroundColor3 = Colors.Field,
         BorderSizePixel = 0,
-        Text = tostring(Config[key]) .. "  >",
+        Text = tostring(Config[key]) .. "  ›",
         Font = Enum.Font.GothamMedium,
         TextSize = 11,
         TextColor3 = Colors.Text,
+        AutoButtonColor = false,
     }, frame)
-    round(button, 8)
-
-    connect(button.MouseButton1Click, function()
+    round(button, 7)
+    outline(button, 0.5)
+    connect(button.Activated, function()
         local index = table.find(options, Config[key]) or 0
         Config[key] = options[index % #options + 1]
-        button.Text = tostring(Config[key]) .. "  >"
+        button.Text = tostring(Config[key]) .. "  ›"
     end)
+    connect(button.MouseEnter, function()
+        animate(button, {BackgroundColor3 = Color3.fromRGB(43, 43, 43)})
+    end)
+    connect(button.MouseLeave, function() animate(button, {BackgroundColor3 = Colors.Field}) end)
 end
 
 local function note(parent, message)
     Order += 1
     local object = label(parent, message, 11, Colors.Muted)
-    object.Size = UDim2.new(1, -8, 0, 48)
+    object.Size = UDim2.new(1, -8, 0, 0)
+    object.AutomaticSize = Enum.AutomaticSize.Y
     object.TextWrapped = true
+    object.TextTruncate = Enum.TextTruncate.None
+    object.TextYAlignment = Enum.TextYAlignment.Top
     object.LayoutOrder = Order
+    make("UIPadding", {
+        PaddingTop = UDim.new(0, 7),
+        PaddingBottom = UDim.new(0, 9),
+        PaddingLeft = UDim.new(0, 3),
+        PaddingRight = UDim.new(0, 3),
+    }, object)
     return object
 end
 
 local function action(parent, name, callback, color)
     Order += 1
-
+    local base = color or Colors.Field
     local button = make("TextButton", {
-        Size = UDim2.new(1, 0, 0, 40),
-        BackgroundColor3 = color or Colors.Accent,
+        Size = UDim2.new(1, 0, 0, 43),
+        BackgroundColor3 = base,
+        BackgroundTransparency = 0.1,
         BorderSizePixel = 0,
         Text = name,
         Font = Enum.Font.GothamSemibold,
-        TextSize = 11,
+        TextSize = 10,
         TextColor3 = Colors.Text,
         LayoutOrder = Order,
+        AutoButtonColor = false,
     }, parent)
-    round(button, 10)
-
-    connect(button.MouseButton1Click, callback)
+    round(button, 8)
+    local stroke = outline(button, 0.35)
+    connect(button.Activated, callback)
+    connect(button.MouseEnter, function()
+        animate(button, {BackgroundColor3 = base:Lerp(Color3.new(1, 1, 1), 0.08)})
+        animate(stroke, {Transparency = 0})
+    end)
+    connect(button.MouseLeave, function()
+        animate(button, {BackgroundColor3 = base})
+        animate(stroke, {Transparency = 0.35})
+    end)
     return button
 end
 
+-- Construção local e ações com jogadores.
+local ExtraPage = newPage("EXTRAS")
+local ExtraStatus = note(ExtraPage, "Construção local: selecione uma peça com o menu fechado.")
+local function extraMessage(message)
+    ExtraStatus.Text = message
+end
+
+local TargetName = ""
+local TargetRow = row(ExtraPage, "Nome do jogador")
+local TargetField = make("TextBox", {
+    Size = UDim2.fromOffset(140, 30),
+    Position = UDim2.new(1, -154, 0.5, -15),
+    BackgroundColor3 = Colors.Field,
+    BorderSizePixel = 0,
+    Text = "",
+    PlaceholderText = "Nome ou @nome",
+    ClearTextOnFocus = false,
+    Font = Enum.Font.Gotham,
+    TextSize = 12,
+    TextColor3 = Colors.Text,
+}, TargetRow)
+round(TargetField, 8)
+
+local function resolveExtraPlayer()
+    local query = TargetField.Text:match("^%s*(.-)%s*$"):gsub("^@", ""):lower()
+    if query == "" then
+        extraMessage("Digite o nome de um jogador.")
+        return
+    end
+    local candidates = {}
+    for _, other in ipairs(Players:GetPlayers()) do
+        if other ~= Player then
+            if other.Name:lower() == query then return other end
+            if other.Name:lower():sub(1, #query) == query
+                or other.DisplayName:lower():sub(1, #query) == query then
+                table.insert(candidates, other)
+            end
+        end
+    end
+    if #candidates == 1 then return candidates[1] end
+    extraMessage(#candidates > 1 and "Nome ambíguo: digite o @nome completo."
+        or "Jogador não encontrado.")
+end
+
+local function extraRoots()
+    local other = resolveExtraPlayer()
+    if not other then return end
+    local _, humanoid, root = characterParts()
+    local otherRoot = other.Character and other.Character:FindFirstChild("HumanoidRootPart")
+    if not root or not humanoid or humanoid.Health <= 0 or not otherRoot then
+        extraMessage("Personagem indisponível.")
+        return
+    end
+    return root, otherRoot, other
+end
+
+action(ExtraPage, "IR ATÉ O JOGADOR", function()
+    local root, otherRoot, other = extraRoots()
+    if not root then return end
+    local ok, problem = pcall(function()
+        root.CFrame = otherRoot.CFrame * CFrame.new(0, 0, 4)
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+    end)
+    extraMessage(ok and ("TP solicitado até " .. other.Name .. ". O servidor pode corrigir.")
+        or tostring(problem))
+end)
+
+action(ExtraPage, "TENTAR PUXAR JOGADOR", function()
+    local root, otherRoot, other = extraRoots()
+    if not root then return end
+    local ok, problem = pcall(function()
+        otherRoot.CFrame = root.CFrame * CFrame.new(0, 0, -5)
+        otherRoot.AssemblyLinearVelocity = Vector3.zero
+    end)
+    extraMessage(ok and ("Movimento local tentado em " .. other.Name .. "; pode não replicar.")
+        or tostring(problem))
+end)
+
+local ToolSourcesCopied = setmetatable({}, {__mode = "k"})
+action(ExtraPage, "TENTAR COPIAR TOOLS ACESSÍVEIS", function()
+    local backpack = Player:FindFirstChildOfClass("Backpack")
+    if not backpack then extraMessage("Backpack indisponível.") return end
+    local copied, failed = 0, 0
+    for _, source in ipairs({game:GetService("ReplicatedStorage"), workspace}) do
+        for _, item in ipairs(source:GetDescendants()) do
+            if item:IsA("Tool") and not ToolSourcesCopied[item] then
+                local belongsToCharacter = false
+                for _, other in ipairs(Players:GetPlayers()) do
+                    if other.Character and item:IsDescendantOf(other.Character) then
+                        belongsToCharacter = true
+                        break
+                    end
+                end
+                if not belongsToCharacter then
+                    local ok, clone = pcall(function() return item:Clone() end)
+                    if ok and clone then
+                        -- A cópia herda Anchored do modelo de armazenamento.
+                        -- Corrige apenas suas peças antes de equipar, preservando soldas.
+                        local prepared, problem = pcall(function()
+                            for _, object in ipairs(clone:GetDescendants()) do
+                                if object:IsA("BasePart") then
+                                    object.Anchored = false
+                                    object.CanCollide = false
+                                end
+                            end
+                            clone:SetAttribute("VisionCopiedTool", true)
+                            -- Scripts de servidor não passam a executar nesta cópia local.
+                            clone.Parent = backpack
+                        end)
+                        if prepared then
+                            ToolSourcesCopied[item] = true
+                            copied += 1
+                        else
+                            clone:Destroy()
+                            failed += 1
+                            warn("[VISION] Falha ao preparar Tool: " .. tostring(problem))
+                        end
+                    else
+                        failed += 1
+                    end
+                end
+            end
+        end
+    end
+    extraMessage("Cópias locais: " .. copied .. ". Falhas: " .. failed
+        .. ". Não garante armas funcionais nem acessa ServerStorage.")
+end)
+
+Config.BuildEnabled = false
+Config.BuildMode = "Mover"
+Config.BuildStep = 1
+Config.BuildAngle = 15
+local BuildSelected
+local BuildStartFrame
+local BuildStartSize
+local BuildDragAxis
+local BuildHistory = {}
+local BuildBox = make("SelectionBox", {
+    Name = "VisionBuildSelection",
+    Color3 = Colors.Accent,
+    LineThickness = 0.04,
+    SurfaceTransparency = 0.9,
+}, Gui)
+local BuildHandles = make("Handles", {
+    Name = "VisionBuildHandles",
+    Color3 = Colors.Accent,
+    Style = Enum.HandlesStyle.Movement,
+    Visible = false,
+}, Gui)
+local BuildArcs = make("ArcHandles", {
+    Name = "VisionBuildRotation",
+    Color3 = Colors.Accent,
+    Visible = false,
+}, Gui)
+local function updateBuild()
+    local part = BuildSelected
+    local active = Config.BuildEnabled and part and part:IsDescendantOf(workspace)
+    BuildBox.Adornee = active and part or nil
+    BuildHandles.Adornee = active and part or nil
+    BuildArcs.Adornee = active and part or nil
+    BuildHandles.Visible = active and Config.BuildMode ~= "Girar" or false
+    BuildArcs.Visible = active and Config.BuildMode == "Girar" or false
+    BuildHandles.Style = Config.BuildMode == "Tamanho"
+        and Enum.HandlesStyle.Resize or Enum.HandlesStyle.Movement
+end
+local function rememberBuild()
+    if not BuildSelected or not BuildSelected.Parent then return end
+    BuildStartFrame = BuildSelected.CFrame
+    BuildStartSize = BuildSelected.Size
+    table.insert(BuildHistory, {
+        Part = BuildSelected, Frame = BuildStartFrame, Size = BuildStartSize,
+    })
+    if #BuildHistory > 100 then table.remove(BuildHistory, 1) end
+end
+local function snapBuild(value, step)
+    step = math.max(step, 0.01)
+    return math.round(value / step) * step
+end
+
+toggle(ExtraPage, "Construção local", "BuildEnabled", updateBuild)
+choice(ExtraPage, "Ferramenta", "BuildMode", {"Mover", "Girar", "Tamanho"})
+numberField(ExtraPage, "Passo / studs", "BuildStep", 0.01)
+numberField(ExtraPage, "Passo / graus", "BuildAngle", 0.1, 180)
+action(ExtraPage, "DESFAZER ÚLTIMA EDIÇÃO", function()
+    local previous = table.remove(BuildHistory)
+    if previous and previous.Part.Parent then
+        previous.Part.Size = previous.Size
+        previous.Part.CFrame = previous.Frame
+        extraMessage("Última edição local desfeita.")
+    end
+end)
+note(ExtraPage, "Feche o menu, clique na peça e arraste as setas ou anéis. Edições locais podem ser corrigidas pelo servidor.")
+
+connect(Mouse.Button1Down, function()
+    if not Config.BuildEnabled or Window.Visible or BuildDragAxis then return end
+    local part = Mouse.Target
+    if not part or not part:IsA("BasePart") then return end
+    if Player.Character and part:IsDescendantOf(Player.Character) then return end
+    BuildSelected = part
+    extraMessage("Selecionada: " .. part.Name)
+    updateBuild()
+end)
+connect(BuildHandles.MouseButton1Down, function(face)
+    BuildDragAxis = face
+    rememberBuild()
+end)
+connect(BuildHandles.MouseDrag, function(face, distance)
+    if not Config.BuildEnabled or not BuildSelected or not BuildSelected.Parent
+        or not BuildStartFrame or BuildDragAxis ~= face then return end
+    local direction = Vector3.FromNormalId(face)
+    local amount = snapBuild(distance, Config.BuildStep)
+    if Config.BuildMode == "Mover" then
+        BuildSelected.CFrame = BuildStartFrame * CFrame.new(direction * amount)
+    elseif Config.BuildMode == "Tamanho" then
+        local axis = Vector3.new(math.abs(direction.X), math.abs(direction.Y), math.abs(direction.Z))
+        local original = BuildStartSize:Dot(axis)
+        amount = math.max(0.05 - original, amount)
+        BuildSelected.Size = BuildStartSize + axis * amount
+        BuildSelected.CFrame = BuildStartFrame * CFrame.new(direction * amount * 0.5)
+    end
+end)
+connect(BuildArcs.MouseButton1Down, function(axis)
+    BuildDragAxis = axis
+    rememberBuild()
+end)
+connect(BuildArcs.MouseDrag, function(axis, angle)
+    if not Config.BuildEnabled or Config.BuildMode ~= "Girar"
+        or not BuildSelected or not BuildSelected.Parent
+        or not BuildStartFrame or BuildDragAxis ~= axis then return end
+    local direction = axis == Enum.Axis.X and Vector3.xAxis
+        or axis == Enum.Axis.Y and Vector3.yAxis or Vector3.zAxis
+    local snapped = math.rad(snapBuild(math.deg(angle), Config.BuildAngle))
+    BuildSelected.CFrame = BuildStartFrame * CFrame.fromAxisAngle(direction, snapped)
+end)
+connect(UIS.InputEnded, function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        BuildDragAxis = nil
+    end
+end)
+connect(RunService.RenderStepped, updateBuild)
+
+
 -- Visual
 toggle(VisualPage, "ESP / quadrado", "ESP")
-toggle(VisualPage, "Esqueleto corporal", "Skeleton")
+toggle(VisualPage, "Contorno branco / sem preenchimento", "Skeleton")
 toggle(VisualPage, "Nickname", "Names")
 toggle(VisualPage, "Incluir NPCs", "NPCs")
 toggle(VisualPage, "Ignorar mesma equipe", "TeamCheck")
 
 local ColorRow = row(VisualPage, "Cor do ESP")
 local Palette = {
-    Color3.fromRGB(110, 150, 255),
-    Color3.fromRGB(70, 225, 255),
-    Color3.fromRGB(255, 110, 155),
-    Color3.fromRGB(100, 255, 170),
-    Color3.fromRGB(255, 220, 100),
+    Color3.fromRGB(255, 255, 255),
+    Color3.fromRGB(220, 220, 220),
+    Color3.fromRGB(185, 185, 185),
+    Color3.fromRGB(150, 150, 150),
+    Color3.fromRGB(115, 115, 115),
 }
 
 for index, color in ipairs(Palette) do
@@ -882,6 +1284,15 @@ note(AimPage,
 )
 
 -- Movimento
+toggle(MovementPage, "Atravessar paredes", "Noclip", function(enabled)
+    if not enabled then restoreCollisions() end
+end)
+
+note(MovementPage,
+    "Atravessar paredes também desativa colisão com o chão. "
+    .. "Use junto com o voo e desative fora das paredes."
+)
+
 toggle(MovementPage, "Velocidade personalizada", "SpeedEnabled")
 numberField(MovementPage, "Velocidade", "Speed", 0)
 
@@ -913,39 +1324,37 @@ note(VehiclePage,
     .. "Veículos ancorados ou controlados pelo servidor podem não responder."
 )
 
+make("Frame", {
+    Position = UDim2.new(0, 0, 1, -42),
+    Size = UDim2.new(1, 0, 0, 42),
+    BackgroundColor3 = Colors.Surface,
+    BackgroundTransparency = 0.1,
+    BorderSizePixel = 0,
+}, Window)
+make("Frame", {
+    Position = UDim2.new(0, 0, 1, -42),
+    Size = UDim2.new(1, 0, 0, 1),
+    BackgroundColor3 = Colors.Stroke,
+    BackgroundTransparency = 0.4,
+    BorderSizePixel = 0,
+}, Window)
 local Footer = label(
     Window,
-    "SHIFT DIR: MENU   /   F: VOO   /   G: PEGAR   /   H: ARREMESSAR",
+    "CTRL + ASPAS: MENU   /   CTRL + BACKSPACE: DESATIVAR",
     9,
     Colors.Muted
 )
 Footer.Position = UDim2.new(0, 18, 1, -30)
 Footer.Size = UDim2.new(1, -36, 0, 18)
 
-local Launcher = make("TextButton", {
-    Size = UDim2.fromOffset(44, 44),
-    Position = UDim2.fromOffset(18, 180),
-    BackgroundColor3 = Colors.Accent,
-    BorderSizePixel = 0,
-    Text = "V",
-    Font = Enum.Font.GothamBold,
-    TextSize = 20,
-    TextColor3 = Colors.Text,
-    Visible = false,
-}, Gui)
-round(Launcher, 14)
-
 local function showMenu(visible)
     Window.Visible = visible
-    Launcher.Visible = not visible
 end
 
+-- Sem botão flutuante; abra somente pelo atalho.
+showMenu(false)
 connect(Hide.MouseButton1Click, function()
     showMenu(false)
-end)
-
-connect(Launcher.MouseButton1Click, function()
-    showMenu(true)
 end)
 
 -- Arrastar pelo cabeçalho.
@@ -986,15 +1395,67 @@ end)
 -- CONTROLES
 -- =========================================================
 
+local function deactivateAll()
+    -- Desliga todas as opções booleanas, mantendo valores numéricos.
+    for key, value in pairs(Config) do
+        if type(value) == "boolean" then
+            Config[key] = false
+            refreshKey(key)
+        end
+    end
+    Aiming = false
+    LockedPart = nil
+    Dragging = false
+    DragTouch = nil
+    BuildDragAxis = nil
+    BuildSelected = nil
+    stopFlight()
+    releaseVehicle()
+    restoreCollisions()
+    updateBuild()
+    if SpeedApplied and SpeedHumanoid and SpeedHumanoid.Parent
+        and SavedSpeed then
+        SpeedHumanoid.WalkSpeed = SavedSpeed
+    end
+    SpeedApplied = false
+    for _, visual in pairs(Visuals) do
+        hideVisual(visual)
+    end
+    showMenu(false)
+    extraMessage("Todas as opções desligadas. Ações anteriores não são desfeitas.")
+end
+
+local function controlHeld()
+    return UIS:IsKeyDown(Enum.KeyCode.LeftControl)
+        or UIS:IsKeyDown(Enum.KeyCode.RightControl)
+end
+
+local function quoteKey(input)
+    if input.KeyCode == Enum.KeyCode.Quote
+        or input.KeyCode == Enum.KeyCode.QuotedDouble then
+        return true
+    end
+    -- Permite o mapeamento local das aspas em outros layouts.
+    local ok, key = pcall(function()
+        return UIS:GetStringForKeyCode(input.KeyCode)
+    end)
+    return ok and (key == "\"" or key == "'")
+end
+
 connect(UIS.InputBegan, function(input, processed)
+    -- O atalho de desligamento funciona inclusive ao editar um campo.
+    if controlHeld() and input.KeyCode == Enum.KeyCode.Backspace then
+        deactivateAll()
+        return
+    end
     if UIS:GetFocusedTextBox() then return end
 
-    if input.KeyCode == Enum.KeyCode.RightShift then
+    if controlHeld() and quoteKey(input) then
         showMenu(not Window.Visible)
         return
     end
 
-    if processed then return end
+    if processed or controlHeld() then return end
 
     if input.KeyCode == Enum.KeyCode.F then
         Config.Fly = not Config.Fly
@@ -1051,7 +1512,7 @@ RunService:BindToRenderStep(
 
         Scale.Scale = math.min(
             1,
-            math.max(0.1, (viewport.X - 24) / 500),
+            math.max(0.1, (viewport.X - 24) / 760),
             math.max(0.1, (viewport.Y - 24) / 550)
         )
 
@@ -1080,7 +1541,7 @@ RunService:BindToRenderStep(
                     visual.Box.Position = position
                     visual.Box.Size = size
                     visual.Box.Color = Config.Color
-                    visual.Box.Visible = true
+                    visual.Box.Visible = not Config.Skeleton
 
                     local owner = Players:GetPlayerFromCharacter(model)
 
@@ -1093,25 +1554,26 @@ RunService:BindToRenderStep(
                     visual.Name.Visible = Config.Names
 
                     if Config.Skeleton then
-                        for index, pair in ipairs(Bones) do
-                            local first = model:FindFirstChild(pair[1])
-                            local second = model:FindFirstChild(pair[2])
-
-                            if first and second
-                                and first:IsA("BasePart")
-                                and second:IsA("BasePart") then
-
-                                local a, visibleA =
-                                    camera:WorldToViewportPoint(first.Position)
-
-                                local b, visibleB =
-                                    camera:WorldToViewportPoint(second.Position)
-
-                                local line = visual.Lines[index]
-                                line.From = Vector2.new(a.X, a.Y)
-                                line.To = Vector2.new(b.X, b.Y)
-                                line.Color = Config.Color
-                                line.Visible = visibleA and visibleB
+                        for index, name in ipairs(BodyParts) do
+                            local part = model:FindFirstChild(name)
+                            if part and part:IsA("BasePart") then
+                                local outline = visual.PartOutlines[index]
+                                if outline and outline.Adornee ~= part then
+                                    outline:Destroy()
+                                    outline = nil
+                                end
+                                if not outline then
+                                    outline = make("Highlight", {
+                                        Name = "VisionBodyOutline",
+                                        Adornee = part,
+                                        FillTransparency = 1,
+                                        OutlineTransparency = 0,
+                                        OutlineColor = Color3.new(1, 1, 1),
+                                        DepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+                                    }, part)
+                                    visual.PartOutlines[index] = outline
+                                end
+                                outline.Enabled = true
                             end
                         end
                     end
@@ -1273,6 +1735,11 @@ end)
 function Controller.Stop()
     if Stopped then return end
     Stopped = true
+    Config.BuildEnabled = false
+    BuildSelected = nil
+    table.clear(BuildHistory)
+    Config.Noclip = false
+    restoreCollisions()
 
     LockedPart = nil
     stopFlight()
@@ -1296,6 +1763,8 @@ function Controller.Stop()
 
     table.clear(Visuals)
     table.clear(Targets)
+    for _, tween in pairs(UITweens) do tween:Cancel() end
+    table.clear(UITweens)
     Gui:Destroy()
 
     if Env.VisionController == Controller then
@@ -1307,10 +1776,10 @@ action(
     MovementPage,
     "ENCERRAR SCRIPT",
     Controller.Stop,
-    Color3.fromRGB(104, 43, 65)
+    Color3.fromRGB(42, 42, 42)
 )
 
 selectPage("VISUAL")
 
 print("[VISION] Carregado.")
-print("Shift direito: menu | F: voo | G: veículo | H: arremessar")
+print("Ctrl + aspas: menu | Ctrl + Backspace: desativar todas as opções")
